@@ -1,0 +1,37 @@
+name: Publish Package
+
+# Tag pushes only: npm's OIDC pre-authorization rejects tokens whose ref/sha claims
+# come from workflow_dispatch or workflow_call.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  id-token: write # exchange the GitHub OIDC token for a short-lived npm publish token
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest # trusted publishing does not support self-hosted runners
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          # Node 22 ships npm 10.9.8, but trusted publishing requires npm >= 11.5.1
+          node-version: 24
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+
+      - name: Verify tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$tag" != "$version" ]; then
+            echo "::error::tag v${tag} does not match package.json version ${version}"
+            exit 1
+          fi
+
+      # Provenance attestation is generated automatically, no --provenance flag needed.
+      - run: npm publish
